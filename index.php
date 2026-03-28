@@ -1,13 +1,13 @@
 <?php
-/* * Video Fetcher - Professional Edition
- * Combined Logic and UI
+/*
+ * Video Fetcher & Proxy Downloader - Professional Edition
+ * Single File Solution
  */
 
-$videoUrl = "";
 $error = "";
 
-if (isset($_POST['url'])) {
-    $input = $_POST['url'];
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && !empty($_POST['url'])) {
+    $input = trim($_POST['url']);
     
     // Extract ID from URL or use raw input
     if (filter_var($input, FILTER_VALIDATE_URL)) {
@@ -22,26 +22,54 @@ if (isset($_POST['url'])) {
         $userAgent = 'Mozilla/5.0 (Linux; Android 10; K) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/137.0.0.0 Mobile Safari/537.36';
         $embedUrl = "https://vidtronx.com/embed.php?bucket=temporary&id=" . htmlspecialchars($videoId);
 
+        // Step 1: Fetch the embed page to extract the CDN link
         $ch = curl_init();
         curl_setopt($ch, CURLOPT_URL, $embedUrl);
         curl_setopt($ch, CURLOPT_RETURNTRANSFER, true);
         curl_setopt($ch, CURLOPT_USERAGENT, $userAgent);
-        curl_setopt($ch, CURLOPT_REFERER, "https://vidtronx.com/");
-        curl_setopt($ch, CURLOPT_FOLLOWLOCATION, true);
+        curl_setopt($ch, CURLOPT_REFERER, $input);
         curl_setopt($ch, CURLOPT_SSL_VERIFYPEER, false);
+        curl_setopt($ch, CURLOPT_TIMEOUT, 15);
 
         $html = curl_exec($ch);
         curl_close($ch);
 
         if (preg_match('/<source src="(https:\/\/vidoycdn\.b-cdn\.net[^"]+)"/', $html, $matches)) {
             $videoUrl = str_replace('&amp;', '&', $matches[1]);
-            header("Location: " . $videoUrl);
+            
+            // Step 2: Proxy the download to bypass Referer checks and force file download
+            // Clean output buffer to prevent file corruption
+            if (ob_get_level()) {
+                ob_end_clean();
+            }
+
+            header('Content-Description: File Transfer');
+            header('Content-Type: video/mp4');
+            header('Content-Disposition: attachment; filename="video_' . $videoId . '.mp4"');
+            header('Cache-Control: no-cache, must-revalidate');
+            header('Expires: 0');
+
+            $chProxy = curl_init();
+            curl_setopt($chProxy, CURLOPT_URL, $videoUrl);
+            curl_setopt($chProxy, CURLOPT_RETURNTRANSFER, false); // Stream directly to output
+            curl_setopt($chProxy, CURLOPT_HTTPHEADER, array(
+                'Referer: https://vidtronx.com/',
+                'User-Agent: ' . $userAgent
+            ));
+            curl_setopt($chProxy, CURLOPT_FOLLOWLOCATION, true);
+            curl_setopt($chProxy, CURLOPT_SSL_VERIFYPEER, false);
+            
+            // Execute stream
+            curl_exec($chProxy);
+            curl_close($chProxy);
+            
+            // Exit immediately so HTML UI does not append to the video file
             exit;
         } else {
-            $error = "Unable to locate video source. The ID might be invalid or expired.";
+            $error = "Unable to locate video source. The media might have been removed or access is restricted.";
         }
     } else {
-        $error = "Please enter a valid Video URL or ID.";
+        $error = "Invalid format. Please enter a valid Resource URL or ID.";
     }
 }
 ?>
@@ -50,7 +78,7 @@ if (isset($_POST['url'])) {
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Video Stream Fetcher</title>
+    <title>Media Stream Fetcher</title>
     <style>
         :root {
             --bg-color: #0f172a;
@@ -60,12 +88,13 @@ if (isset($_POST['url'])) {
             --text-primary: #f8fafc;
             --text-secondary: #94a3b8;
             --error-color: #ef4444;
+            --input-bg: #0f172a;
         }
 
         body {
             background-color: var(--bg-color);
             color: var(--text-primary);
-            font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
             display: flex;
             justify-content: center;
             align-items: center;
@@ -75,30 +104,32 @@ if (isset($_POST['url'])) {
 
         .container {
             width: 100%;
-            max-width: 450px;
+            max-width: 420px;
             padding: 20px;
+            box-sizing: border-box;
         }
 
         .card {
             background-color: var(--card-bg);
-            padding: 40px;
-            border-radius: 16px;
-            box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.3), 0 8px 10px -6px rgba(0, 0, 0, 0.3);
+            padding: 40px 30px;
+            border-radius: 12px;
+            box-shadow: 0 20px 25px -5px rgba(0, 0, 0, 0.2), 0 10px 10px -5px rgba(0, 0, 0, 0.1);
             border: 1px solid rgba(255, 255, 255, 0.05);
             text-align: center;
         }
 
         h1 {
-            font-size: 24px;
-            font-weight: 700;
-            margin-bottom: 8px;
-            letter-spacing: -0.025em;
+            font-size: 22px;
+            font-weight: 600;
+            margin: 0 0 10px 0;
+            letter-spacing: 0.5px;
         }
 
         p {
             color: var(--text-secondary);
             font-size: 14px;
-            margin-bottom: 32px;
+            margin: 0 0 30px 0;
+            line-height: 1.5;
         }
 
         .input-group {
@@ -108,12 +139,12 @@ if (isset($_POST['url'])) {
 
         label {
             display: block;
-            font-size: 12px;
+            font-size: 11px;
             font-weight: 600;
             text-transform: uppercase;
             margin-bottom: 8px;
             color: var(--text-secondary);
-            letter-spacing: 0.05em;
+            letter-spacing: 1px;
         }
 
         input[type="text"] {
@@ -121,9 +152,9 @@ if (isset($_POST['url'])) {
             padding: 14px 16px;
             border-radius: 8px;
             border: 1px solid #334155;
-            background-color: #0f172a;
-            color: white;
-            font-size: 15px;
+            background-color: var(--input-bg);
+            color: var(--text-primary);
+            font-size: 14px;
             box-sizing: border-box;
             transition: all 0.2s ease;
         }
@@ -131,7 +162,11 @@ if (isset($_POST['url'])) {
         input[type="text"]:focus {
             outline: none;
             border-color: var(--accent-color);
-            box-shadow: 0 0 0 3px rgba(56, 189, 248, 0.2);
+            box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.2);
+        }
+
+        input[type="text"]::placeholder {
+            color: #475569;
         }
 
         button {
@@ -141,19 +176,18 @@ if (isset($_POST['url'])) {
             border: none;
             background-color: var(--accent-color);
             color: #0f172a;
-            font-size: 16px;
-            font-weight: 700;
+            font-size: 15px;
+            font-weight: 600;
             cursor: pointer;
-            transition: all 0.2s ease;
+            transition: background-color 0.2s ease, transform 0.1s ease;
         }
 
         button:hover {
             background-color: var(--accent-hover);
-            transform: translateY(-1px);
         }
 
         button:active {
-            transform: translateY(0);
+            transform: scale(0.98);
         }
 
         .error-message {
@@ -164,12 +198,15 @@ if (isset($_POST['url'])) {
             font-size: 13px;
             margin-bottom: 20px;
             border: 1px solid rgba(239, 68, 68, 0.2);
+            text-align: left;
         }
 
         .footer {
-            margin-top: 24px;
-            font-size: 12px;
+            margin-top: 25px;
+            font-size: 11px;
             color: #475569;
+            text-transform: uppercase;
+            letter-spacing: 1px;
         }
     </style>
 </head>
@@ -177,8 +214,8 @@ if (isset($_POST['url'])) {
 
 <div class="container">
     <div class="card">
-        <h1>Video Downloader</h1>
-        <p>Enter the video link or ID to start fetching the media file.</p>
+        <h1>Media Fetcher</h1>
+        <p>Enter the target URL or resource ID to securely download the media file.</p>
 
         <?php if ($error): ?>
             <div class="error-message">
@@ -188,14 +225,14 @@ if (isset($_POST['url'])) {
 
         <form action="" method="POST">
             <div class="input-group">
-                <label for="url">Resource Identifier</label>
-                <input type="text" id="url" name="url" placeholder="https://vidtronx.com/e/..." required>
+                <label for="url">Resource Link</label>
+                <input type="text" id="url" name="url" placeholder="https://..." required autocomplete="off">
             </div>
             <button type="submit">Download Media</button>
         </form>
 
         <div class="footer">
-            SECURE ENCRYPTED FETCHING
+            Secured Proxy Connection
         </div>
     </div>
 </div>
